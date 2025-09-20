@@ -1,0 +1,35 @@
+# Mix build artifacts
+/_build/
+/deps/
+/doc/
+
+# Generated files
+*.beam
+*.ez
+
+# If you use Dialyzer
+.plt
+.plt.*
+
+# If you use ExUnit with tmp files
+/tmp/
+
+# Logs
+*.log
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+# macOS
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+
+/data/
+/priv/data/
