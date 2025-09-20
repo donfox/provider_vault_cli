@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Pre-commit hook to block unwanted files:
+# - Blocks .zip and .csv (except CSVs in test/fixtures/)
+# - Blocks any file larger than 5 MB
+
+MAX_SIZE=5000000 # 5 MB
+
+staged=$(git diff --cached --name-only)
+
+blocklist=""
+
+for file in $staged; do
+  # Skip deleted files
+  [ -e "$file" ] || continue
+
+  # Check for blocked extensions
+  case "$file" in
+    *.zip|*.csv)
+      if [[ "$file" == test/fixtures/* ]]; then
+        continue
+      fi
+      blocklist="$blocklist $file"
+      ;;
+  esac
+
+  # Check for file size
+  size=$(wc -c <"$file")
+  if [ "$size" -gt $MAX_SIZE ]; then
+    blocklist="$blocklist $file"
+    echo "⚠️ $file is too large (${size} bytes > $MAX_SIZE)."
+  fi
+done
+
+if [[ -n "$blocklist" ]]; then
+  echo "❌ Commit blocked due to forbidden/large files:"
+  for f in $blocklist; do
+    echo "   - $f"
+  done
+  echo "Please remove them from the commit, shrink them, or add to test/fixtures/ if intentional."
+  exit 1
+fi
+
+exit 0
