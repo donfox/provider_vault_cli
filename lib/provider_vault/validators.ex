@@ -1,9 +1,11 @@
 defmodule ProviderVault.Validators do
   alias Mix.Shell.IO, as: Shell
 
+  @prefix_digits ~c"80840" |> Enum.map(&(&1 - ?0))
+
   @doc """
   Validate NPI: must be 10 digits and pass Luhn check.
-  NPI check digit is computed with Luhn mod-10 using the prefix '80840' + first 9 digits.
+  NPI check digit is computed with Luhn mod-10 using prefix '80840' + first 9 digits.
   """
   def require_npi(npi) do
     npi = String.replace(npi, ~r/\D/, "")
@@ -23,10 +25,11 @@ defmodule ProviderVault.Validators do
   end
 
   defp luhn_valid_npi?(npi10) do
-    # Per NPPES: use Luhn on prefix '80840' plus first 9 digits; compare with 10th digit
     {body9, check_digit} = String.split_at(npi10, 9)
-    digits = ~c"80840" |> Enum.map(&(&1 - ?0))
-    digits = digits ++ (body9 |> String.to_charlist() |> Enum.map(&(&1 - ?0)))
+
+    digits =
+      @prefix_digits ++
+        (body9 |> String.to_charlist() |> Enum.map(&(&1 - ?0)))
 
     sum =
       digits
@@ -45,6 +48,7 @@ defmodule ProviderVault.Validators do
     Integer.to_string(expected) == check_digit
   end
 
+  @spec require_nonempty(binary(), any()) :: binary()
   @doc """
   Require a non-empty string; re-prompts on empty.
   """

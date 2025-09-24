@@ -2,6 +2,7 @@ defmodule ProviderVault.CLI.Main do
   alias Mix.Shell.IO, as: Shell
   alias ProviderVault.{Providers, Storage, Validators}
   alias ProviderVault.CLI.Menu
+
   @data_file "priv/data/providers.csv"
 
   # Helpers
@@ -57,28 +58,29 @@ defmodule ProviderVault.CLI.Main do
         clear_all()
         loop()
 
-      :convert_excel ->
-        Menu.excel_to_csv()
-        loop()
-
       :excel_to_csv ->
         Menu.excel_to_csv()
         loop()
 
+      :fetch_nppes ->
+        fetch_nppes()
+        loop()
+
       :exit ->
         Shell.info("Bye!")
-        :init.stop()
+        maybe_halt()
+
+      :invalid ->
+        Shell.error("Invalid selection.")
+        loop()
     end
   end
 
   # ── Bootstrapping / Storage ──────────────────────────────────────────────────
   defp ensure_storage do
     case Storage.init_csv(data_file()) do
-      :created ->
-        Shell.info("Initialized new CSV store at #{data_file()}.")
-
-      :ok ->
-        :ok
+      :created -> Shell.info("Initialized new CSV store at #{data_file()}.")
+      :ok -> :ok
     end
   end
 
@@ -87,7 +89,6 @@ defmodule ProviderVault.CLI.Main do
   end
 
   defp save_all(providers) when is_list(providers) do
-    # clear then rewrite the CSV
     :ok = Storage.clear_csv(data_file())
     Enum.each(providers, fn p -> Storage.append_csv(data_file(), p) end)
     :ok
@@ -96,7 +97,6 @@ defmodule ProviderVault.CLI.Main do
   # ── Actions ──────────────────────────────────────────────────────────────────
   defp list_providers do
     Shell.info("\n-- Providers --")
-
     providers = load_providers()
 
     if providers == [] do
@@ -113,17 +113,17 @@ defmodule ProviderVault.CLI.Main do
 
     npi =
       Shell.prompt("NPI (10 digits): ")
-      |> String.trim()
+      |> handle_nil_or(&String.trim/1)
       |> Validators.require_npi()
 
     name =
       Shell.prompt("Name (Last, First or Org): ")
-      |> String.trim()
+      |> handle_nil_or(&String.trim/1)
       |> Validators.require_nonempty("Name is required")
 
-    taxonomy = Shell.prompt("Taxonomy (e.g., 207Q00000X): ") |> String.trim()
-    phone = Shell.prompt("Phone (optional): ") |> String.trim()
-    address = Shell.prompt("Address (optional): ") |> String.trim()
+    taxonomy = Shell.prompt("Taxonomy (e.g., 207Q00000X): ") |> handle_nil_or(&String.trim/1)
+    phone = Shell.prompt("Phone (optional): ") |> handle_nil_or(&String.trim/1)
+    address = Shell.prompt("Address (optional): ") |> handle_nil_or(&String.trim/1)
 
     provider = %Providers.Provider{
       npi: npi,
@@ -134,11 +134,8 @@ defmodule ProviderVault.CLI.Main do
     }
 
     case Storage.insert_if_missing(data_file(), provider) do
-      :inserted ->
-        Shell.info("Saved.")
-
-      :exists ->
-        Shell.error("A provider with NPI #{npi} already exists. Not saved.")
+      :inserted -> Shell.info("Saved.")
+      :exists -> Shell.error("A provider with NPI #{npi} already exists. Not saved.")
     end
   end
 
@@ -147,7 +144,7 @@ defmodule ProviderVault.CLI.Main do
 
     npi =
       Shell.prompt("Enter NPI: ")
-      |> String.trim()
+      |> handle_nil_or(&String.trim/1)
       |> Validators.require_npi()
 
     load_providers()
@@ -161,7 +158,7 @@ defmodule ProviderVault.CLI.Main do
   defp search_by_name do
     Shell.info("\n-- Search by Name --")
 
-    term = Shell.prompt("Enter partial name: ") |> String.trim()
+    term = Shell.prompt("Enter partial name: ") |> handle_nil_or(&String.trim/1)
 
     providers =
       load_providers()
@@ -190,7 +187,7 @@ defmodule ProviderVault.CLI.Main do
       |> Enum.with_index(1)
       |> Enum.each(fn {p, i} -> Shell.info("#{i}. " <> Providers.format(p)) end)
 
-      idx_input = Shell.prompt("\nChoose number to edit: ") |> String.trim()
+      idx_input = Shell.prompt("\nChoose number to edit: ") |> handle_nil_or(&String.trim/1)
 
       case Integer.parse(idx_input) do
         {n, ""} when n >= 1 and n <= length(providers) ->
@@ -201,22 +198,22 @@ defmodule ProviderVault.CLI.Main do
 
           new_name =
             Shell.prompt("Name [#{p.name}]: ")
-            |> String.trim()
+            |> handle_nil_or(&String.trim/1)
             |> default_if_blank(p.name)
 
           new_taxonomy =
             Shell.prompt("Taxonomy [#{p.taxonomy}]: ")
-            |> String.trim()
+            |> handle_nil_or(&String.trim/1)
             |> default_if_blank(p.taxonomy)
 
           new_phone =
             Shell.prompt("Phone [#{p.phone}]: ")
-            |> String.trim()
+            |> handle_nil_or(&String.trim/1)
             |> default_if_blank(p.phone)
 
           new_address =
             Shell.prompt("Address [#{p.address}]: ")
-            |> String.trim()
+            |> handle_nil_or(&String.trim/1)
             |> default_if_blank(p.address)
 
           updated = %Providers.Provider{
@@ -239,7 +236,7 @@ defmodule ProviderVault.CLI.Main do
   defp clear_all do
     Shell.info("\n-- Clear All Records --")
 
-    case String.trim(Shell.prompt("Type ERASE to delete ALL records: ")) do
+    case Shell.prompt("Type ERASE to delete ALL records: ") |> handle_nil_or(&String.trim/1) do
       "ERASE" ->
         save_all([])
         Shell.info("All records cleared.")
@@ -288,14 +285,15 @@ defmodule ProviderVault.CLI.Main do
       |> Enum.with_index(1)
       |> Enum.each(fn {p, i} -> Shell.info("#{i}. #{p.name} | NPI: #{p.npi}") end)
 
-      idx_input = Shell.prompt("\nChoose number to delete: ") |> String.trim()
+      idx_input = Shell.prompt("\nChoose number to delete: ") |> handle_nil_or(&String.trim/1)
 
       case Integer.parse(idx_input) do
         {n, ""} when n >= 1 and n <= length(providers) ->
           idx = n - 1
           p = Enum.at(providers, idx)
 
-          case String.trim(Shell.prompt("Type DELETE to remove #{p.name} (NPI #{p.npi}): ")) do
+          case Shell.prompt("Type DELETE to remove #{p.name} (NPI #{p.npi}): ")
+               |> handle_nil_or(&String.trim/1) do
             "DELETE" ->
               new_list = List.delete_at(providers, idx)
               save_all(new_list)
@@ -311,7 +309,68 @@ defmodule ProviderVault.CLI.Main do
     end
   end
 
+  # ── NPPES Fetch (new) ────────────────────────────────────────────────────────
+  defp fetch_nppes do
+    Shell.info("\n-- Fetch Monthly NPPES --")
+
+    url =
+      System.get_env("NPPES_URL") ||
+        Shell.prompt("Enter NPPES zip URL: ") |> handle_nil_or(&String.trim/1)
+
+    to_dir =
+      System.get_env("NPPES_TO") ||
+        Shell.prompt("Save to dir [priv/data]: ")
+        |> handle_nil_or(&String.trim/1)
+        |> default_if_blank("priv/data")
+
+    if url == "" do
+      Shell.info("Canceled.")
+      :ok
+    else
+      # Ensure HTTP/SSL are started (tuple returns)
+      {:ok, _} = Application.ensure_all_started(:inets)
+      {:ok, _} = Application.ensure_all_started(:ssl)
+
+      # Ensure app is started so Mix tasks are resolvable
+      Mix.Task.run("app.start")
+
+      args = [url, "--to", to_dir]
+      Shell.info("Running: mix nppes.fetch #{url} --to #{to_dir}")
+
+      runner = Application.get_env(:provider_vault_cli, :mix_runner, ProviderVault.MixRunner.Real)
+
+      try do
+        runner.run("nppes.fetch", args)
+        Shell.info("NPPES fetch completed.")
+        :ok
+      rescue
+        e ->
+          Shell.error("NPPES fetch failed: #{Exception.message(e)}")
+          :error
+      end
+    end
+  end
+
   # ── Utils ────────────────────────────────────────────────────────────────────
   defp default_if_blank("", d), do: d
   defp default_if_blank(s, _), do: s
+
+  # Converts nil from Shell.prompt/1 into a clean exit path, or applies a fun.
+  defp handle_nil_or(nil, _fun) do
+    Shell.info("Bye!")
+    :init.stop()
+    # never used after :init.stop/0; keeps dialyzer happy
+    ""
+  end
+
+  defp handle_nil_or(s, fun) when is_function(fun, 1), do: fun.(s)
+
+  # --- Test-friendly halt -----------------------------------------------------
+  defp maybe_halt do
+    if Application.get_env(:provider_vault_cli, :test_mode, false) do
+      :ok
+    else
+      :init.stop()
+    end
+  end
 end

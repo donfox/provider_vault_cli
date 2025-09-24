@@ -16,7 +16,7 @@ defmodule ProviderVault.Excel.Convert do
       {:ok, "priv/data/file.csv"}
   """
   def convert_file(xlsx_path, opts \\ []) when is_binary(xlsx_path) do
-    unless String.ends_with?(String.downcase(xlsx_path), ".xlsx") do
+    if !String.ends_with?(String.downcase(xlsx_path), ".xlsx") do
       {:error, {:invalid_file, "expected .xlsx"}}
     else
       # 1-based default

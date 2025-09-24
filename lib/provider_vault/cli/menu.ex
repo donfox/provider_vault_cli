@@ -1,115 +1,101 @@
 defmodule ProviderVault.CLI.Menu do
   alias Mix.Shell.IO, as: Shell
-  alias ProviderVault.Excel.Convert, as: Convert
+  alias ProviderVault.Excel.Convert
 
-  @choices [
-    {:add, "Add provider"},
-    {:list, "List providers"},
-    {:find_npi, "Find by NPI"},
-    {:edit, "Edit a provider"},
-    {:delete, "Delete a provider"},
-    {:search_name, "Search by name"},
-    {:import_samples, "Import sample data"},
-    {:clear_all, "Clear all records"},
-    {:excel_to_csv, "Convert Excel -> CSV"},
-    {:exit, "Exit"}
-  ]
-
-  def print_menu do
-    header = "Choose an option:\n"
-
-    body =
-      @choices
-      |> Enum.with_index(1)
-      |> Enum.map(fn {{_action, label}, i} -> "#{i}) #{label}" end)
-      |> Enum.join("\n")
-
-    Shell.info(header <> body <> "\n")
-  end
-
-  def prompt_choice do
-    case safe_prompt("Enter number: ") do
-      :eof ->
-        :exit
-
-      input ->
-        trimmed = String.trim(input)
-
-        # allow 'q' to quit quickly
-        if trimmed in ["q", "Q"] do
-          :exit
-        else
-          with {n, ""} <- Integer.parse(trimmed),
-               true <- n >= 1 and n <= length(@choices) do
-            @choices |> Enum.at(n - 1) |> elem(0)
-          else
-            _ ->
-              Shell.error("Invalid choice.")
-              prompt_choice()
-          end
-        end
-    end
-  end
-
-  defp safe_prompt(msg) do
-    case IO.gets(msg) do
-      :eof -> :eof
-      nil -> :eof
-      bin -> bin
-    end
-  end
-
-  @doc """
-  Prompt for a file or directory and convert Excel (.xlsx) to CSV.
-  Output defaults to ./data unless overridden.
+  @menu """
+  Choose an option:
+  1) Add provider
+  2) List providers
+  3) Find by NPI
+  4) Edit a provider
+  5) Delete a provider
+  6) Search by name
+  7) Import sample data
+  8) Clear all records
+  9) Convert Excel -> CSV
+  10) Exit
+  11) Fetch monthly NPPES
   """
-  def excel_to_csv do
-    Shell.cmd("clear")
-    Shell.info("== Excel -> CSV ==")
 
-    path =
+  # --- Menu display ------------------------------------------------------------
+  def print_menu, do: Shell.info(@menu)
+
+  # Map numeric input to atoms your Main expects
+  def prompt_choice do
+    case Shell.prompt("Enter number: ") |> to_string() |> String.trim() do
+      "1" -> :add
+      "2" -> :list
+      "3" -> :find_npi
+      "4" -> :edit
+      "5" -> :delete
+      "6" -> :search_name
+      "7" -> :import_samples
+      "8" -> :clear_all
+      "9" -> :excel_to_csv
+      "10" -> :exit
+      "11" -> :fetch_nppes
+      "q" -> :exit
+      "Q" -> :exit
+      _ -> :invalid
+    end
+  end
+
+  # --- Excel → CSV action (called by Main) ------------------------------------
+  # Uses 1-based sheet index (default 1).
+  def excel_to_csv do
+    Shell.info("\n-- Convert Excel -> CSV --")
+
+    xlsx_path =
       Shell.prompt("Path to .xlsx file OR directory: ")
+      |> to_string()
       |> String.trim()
 
-    if path == "" do
+    if xlsx_path == "" do
       Shell.error("No path provided.")
       :noop
     else
       sheet =
-        Shell.prompt("Sheet index (default 0): ")
+        Shell.prompt("Sheet number (1-based, default 1): ")
+        |> to_string()
         |> String.trim()
-        |> parse_int_default(0)
+        |> parse_int_default(1)
 
       out_dir =
         Shell.prompt("Output directory (default ./data): ")
+        |> to_string()
         |> String.trim()
         |> default_if_blank("data")
         |> Path.expand(File.cwd!())
 
       opts = [sheet: sheet, out_dir: out_dir]
 
-      if File.dir?(path) do
-        results = Convert.convert_all(path, opts)
+      cond do
+        File.dir?(xlsx_path) and function_exported?(Convert, :convert_all, 2) ->
+          results = Convert.convert_all(xlsx_path, opts)
+          Shell.info("\nResults:")
 
-        Shell.info("\nResults:")
+          Enum.each(results, fn {p, res} ->
+            case res do
+              {:ok, out} -> Shell.info("OK   #{p} -> #{out}")
+              {:error, reason} -> Shell.error("ERR  #{p} -> #{inspect(reason)}")
+            end
+          end)
 
-        Enum.each(results, fn {p, res} ->
-          case res do
-            {:ok, out} -> Shell.info("OK   #{p}  ->  #{out}")
-            {:error, reason} -> Shell.error("ERR  #{p}  ->  #{inspect(reason)}")
+        File.dir?(xlsx_path) ->
+          Shell.error("Directory given, but Convert.convert_all/2 not available.")
+
+        true ->
+          case Convert.convert_file(xlsx_path, opts) do
+            {:ok, out} -> Shell.info("\nOK   #{xlsx_path} -> #{out}")
+            {:error, reason} -> Shell.error("\nERR  #{xlsx_path} -> #{inspect(reason)}")
           end
-        end)
-      else
-        case Convert.convert_file(path, opts) do
-          {:ok, out} -> Shell.info("\nOK   #{path}  ->  #{out}")
-          {:error, reason} -> Shell.error("\nERR  #{path}  ->  #{inspect(reason)}")
-        end
       end
 
-      Shell.prompt("\nPress Enter to return to menu")
+      _ = Shell.prompt("\nPress Enter to return to menu")
     end
   end
 
+  # --- Helpers ----------------------------------------------------------------
   defp parse_int_default("", default), do: default
 
   defp parse_int_default(str, default) do

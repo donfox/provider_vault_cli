@@ -1,3 +1,4 @@
+# mix.exs
 defmodule ProviderVaultCli.MixProject do
   use Mix.Project
 
@@ -6,6 +7,8 @@ defmodule ProviderVaultCli.MixProject do
       app: :provider_vault_cli,
       version: "0.1.6",
       elixir: "~> 1.15",
+      # <- use the helper
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases()
@@ -14,9 +17,14 @@ defmodule ProviderVaultCli.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      # inets/ssl are handy since you use HTTP in your NPPES fetch
+      extra_applications: [:logger, :inets, :ssl]
     ]
   end
+
+  # Compile test support files only in test env
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
     [
