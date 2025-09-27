@@ -1,23 +1,58 @@
 defmodule ProviderVault.CLI.Main do
-  alias Mix.Shell.IO, as: Shell
+  # Small shell wrapper that works in escripts (no Mix dependency)
+  defmodule Shell do
+    def info(msg), do: IO.puts(msg)
+    def error(msg), do: IO.puts(:stderr, msg)
+
+    def prompt(msg) do
+      case IO.gets(msg) do
+        :eof -> nil
+        data -> data
+      end
+    end
+
+    def clear, do: IO.write([IO.ANSI.clear(), IO.ANSI.home()])
+  end
+
   alias ProviderVault.{Providers, Storage, Validators}
   alias ProviderVault.CLI.Menu
 
   @data_file "priv/data/providers.csv"
-
-  # Helpers
   defp data_file, do: @data_file
 
-  # PUBLIC ENTRYPOINT
+  # ── Public entrypoint (escript calls this via MixRunner) ─────────────────────
+  @spec main([String.t()]) :: :ok
+  def main(argv) do
+    case argv do
+      [] -> start()
+      ["--help"] -> help()
+      ["-h"] -> help()
+      _ -> start()
+    end
+  end
+
+  defp help do
+    Shell.info("""
+    ProviderVault CLI
+
+    Usage:
+      provider_vault_cli           # interactive menu
+      provider_vault_cli --help    # this help
+    """)
+
+    :ok
+  end
+
+  # ── App start ────────────────────────────────────────────────────────────────
   def start do
     welcome_message()
     ensure_storage()
     loop()
   end
 
-  # ── UI Loop ───────────────────────────────────────────────────────────────────
+  # ── UI Loop ─────────────────────────────────────────────────────────────────
   defp welcome_message do
-    Shell.cmd("clear")
+    Shell.clear()
     Shell.info("== Provider Vault CLI ==")
     Shell.info("Manage simple medical provider records (CSV-backed).")
   end
@@ -76,7 +111,7 @@ defmodule ProviderVault.CLI.Main do
     end
   end
 
-  # ── Bootstrapping / Storage ──────────────────────────────────────────────────
+  # ── Bootstrapping / Storage ─────────────────────────────────────────────────
   defp ensure_storage do
     case Storage.init_csv(data_file()) do
       :created -> Shell.info("Initialized new CSV store at #{data_file()}.")
@@ -84,9 +119,7 @@ defmodule ProviderVault.CLI.Main do
     end
   end
 
-  defp load_providers do
-    Storage.stream_csv(data_file()) |> Enum.to_list()
-  end
+  defp load_providers, do: Storage.stream_csv(data_file()) |> Enum.to_list()
 
   defp save_all(providers) when is_list(providers) do
     :ok = Storage.clear_csv(data_file())
@@ -94,7 +127,7 @@ defmodule ProviderVault.CLI.Main do
     :ok
   end
 
-  # ── Actions ──────────────────────────────────────────────────────────────────
+  # ── Actions ─────────────────────────────────────────────────────────────────
   defp list_providers do
     Shell.info("\n-- Providers --")
     providers = load_providers()
@@ -157,7 +190,6 @@ defmodule ProviderVault.CLI.Main do
 
   defp search_by_name do
     Shell.info("\n-- Search by Name --")
-
     term = Shell.prompt("Enter partial name: ") |> handle_nil_or(&String.trim/1)
 
     providers =
@@ -233,46 +265,6 @@ defmodule ProviderVault.CLI.Main do
     end
   end
 
-  defp clear_all do
-    Shell.info("\n-- Clear All Records --")
-
-    case Shell.prompt("Type ERASE to delete ALL records: ") |> handle_nil_or(&String.trim/1) do
-      "ERASE" ->
-        save_all([])
-        Shell.info("All records cleared.")
-
-      _ ->
-        Shell.info("Canceled.")
-    end
-  end
-
-  defp import_samples do
-    Shell.info("\n-- Import Samples --")
-
-    samples = [
-      %Providers.Provider{
-        npi: "1234567890",
-        name: "Doe, Jane",
-        taxonomy: "207Q00000X",
-        phone: "555-0101",
-        address: "123 Main St"
-      },
-      %Providers.Provider{
-        npi: "2345678901",
-        name: "Smith, John",
-        taxonomy: "1223G0001X",
-        phone: "555-0303",
-        address: "77 Dental Ave"
-      }
-    ]
-
-    results = Enum.map(samples, fn p -> Storage.insert_if_missing(data_file(), p) end)
-    inserted = Enum.count(results, &(&1 == :inserted))
-    exists = Enum.count(results, &(&1 == :exists))
-
-    Shell.info("Imported #{inserted} new provider(s). Skipped #{exists} duplicate(s).")
-  end
-
   defp delete_provider do
     Shell.info("\n-- Delete Provider --")
 
@@ -309,7 +301,46 @@ defmodule ProviderVault.CLI.Main do
     end
   end
 
-  # ── NPPES Fetch (new) ────────────────────────────────────────────────────────
+  defp import_samples do
+    Shell.info("\n-- Import Samples --")
+
+    samples = [
+      %Providers.Provider{
+        npi: "1234567890",
+        name: "Doe, Jane",
+        taxonomy: "207Q00000X",
+        phone: "555-0101",
+        address: "123 Main St"
+      },
+      %Providers.Provider{
+        npi: "2345678901",
+        name: "Smith, John",
+        taxonomy: "1223G0001X",
+        phone: "555-0303",
+        address: "77 Dental Ave"
+      }
+    ]
+
+    results = Enum.map(samples, fn p -> Storage.insert_if_missing(data_file(), p) end)
+    inserted = Enum.count(results, &(&1 == :inserted))
+    exists = Enum.count(results, &(&1 == :exists))
+    Shell.info("Imported #{inserted} new provider(s). Skipped #{exists} duplicate(s).")
+  end
+
+  defp clear_all do
+    Shell.info("\n-- Clear All Records --")
+
+    case Shell.prompt("Type ERASE to delete ALL records: ") |> handle_nil_or(&String.trim/1) do
+      "ERASE" ->
+        save_all([])
+        Shell.info("All records cleared.")
+
+      _ ->
+        Shell.info("Canceled.")
+    end
+  end
+
+  # ── NPPES Fetch (safe for escripts; Mix may not be present) ─────────────────
   defp fetch_nppes do
     Shell.info("\n-- Fetch Monthly NPPES --")
 
@@ -327,26 +358,29 @@ defmodule ProviderVault.CLI.Main do
       Shell.info("Canceled.")
       :ok
     else
-      # Ensure HTTP/SSL are started (tuple returns)
-      {:ok, _} = Application.ensure_all_started(:inets)
-      {:ok, _} = Application.ensure_all_started(:ssl)
-
-      # Ensure app is started so Mix tasks are resolvable
-      Mix.Task.run("app.start")
-
       args = [url, "--to", to_dir]
-      Shell.info("Running: mix nppes.fetch #{url} --to #{to_dir}")
+      Shell.info("Would run: mix nppes.fetch #{url} --to #{to_dir}")
 
-      runner = Application.get_env(:provider_vault_cli, :mix_runner, ProviderVault.MixRunner.Real)
+      # In iex -S mix, Mix is available; in escripts it generally isn’t.
+      if Code.ensure_loaded?(Mix.Task) do
+        Mix.Task.run("app.start")
 
-      try do
-        runner.run("nppes.fetch", args)
-        Shell.info("NPPES fetch completed.")
+        try do
+          Mix.Task.run("nppes.fetch", args)
+          Shell.info("NPPES fetch completed.")
+          :ok
+        rescue
+          e ->
+            Shell.error("NPPES fetch failed: #{Exception.message(e)}")
+            :error
+        end
+      else
+        Shell.info(
+          "Note: Mix tasks aren’t available inside the escript.\n" <>
+            "Run in dev:  mix nppes.fetch \"#{url}\" --to #{to_dir}"
+        )
+
         :ok
-      rescue
-        e ->
-          Shell.error("NPPES fetch failed: #{Exception.message(e)}")
-          :error
       end
     end
   end
@@ -355,11 +389,10 @@ defmodule ProviderVault.CLI.Main do
   defp default_if_blank("", d), do: d
   defp default_if_blank(s, _), do: s
 
-  # Converts nil from Shell.prompt/1 into a clean exit path, or applies a fun.
   defp handle_nil_or(nil, _fun) do
     Shell.info("Bye!")
     :init.stop()
-    # never used after :init.stop/0; keeps dialyzer happy
+    # not used after :init.stop/0; satisfies types
     ""
   end
 
@@ -367,10 +400,6 @@ defmodule ProviderVault.CLI.Main do
 
   # --- Test-friendly halt -----------------------------------------------------
   defp maybe_halt do
-    if Application.get_env(:provider_vault_cli, :test_mode, false) do
-      :ok
-    else
-      :init.stop()
-    end
+    if Application.get_env(:provider_vault_cli, :test_mode, false), do: :ok, else: :init.stop()
   end
 end

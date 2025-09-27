@@ -5,11 +5,11 @@ defmodule ProviderVaultCli.MixProject do
   def project do
     [
       app: :provider_vault_cli,
-      version: "0.1.6",
-      elixir: "~> 1.15",
-      # <- use the helper
+      version: "0.1.7",
+      elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      escript: [main_module: ProviderVault.MixRunner],
       deps: deps(),
       aliases: aliases()
     ]

@@ -33,3 +33,8 @@
 
 /data/
 /priv/data/
+
+# Generated escript binary
+/provider_vault_cli
+
+
