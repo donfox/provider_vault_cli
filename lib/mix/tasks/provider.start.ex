@@ -1,10 +1,15 @@
 defmodule Mix.Tasks.Provider.Start do
   use Mix.Task
+  @shortdoc "Starts the Provider Vault interactive CLI"
 
-  @shortdoc "Starts the Provider Vault CLI"
-  def run(_args) do
-    # Ensure your app and deps are started when debugging
-    Mix.Task.run("app.start")
-    ProviderVault.CLI.Main.start()
+  @moduledoc """
+  Runs the interactive CLI (same as running the escript without flags).
+  """
+
+  @impl Mix.Task
+  def run(_argv) do
+    Application.ensure_all_started(:inets)
+    Application.ensure_all_started(:ssl)
+    ProviderVault.CLI.Main.main([])
   end
 end

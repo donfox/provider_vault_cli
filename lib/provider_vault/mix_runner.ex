@@ -1,30 +1,38 @@
 defmodule ProviderVault.MixRunner do
   @moduledoc """
-  Entry point for the ProviderVault CLI when built as an escript.
+  Escript entry point for ProviderVault CLI.
 
-  This module is invoked automatically when the compiled `provider_vault_cli`
-  binary is executed. It receives the command-line arguments (`argv`) and
-  hands them off to the real CLI logic in `ProviderVault.CLI.Main`.
-
-  Responsibilities:
-    * Ensure required OTP applications (like `:inets` and `:ssl`) are started,
-      because escripts do not automatically boot them.
-    * Delegate execution to `ProviderVault.CLI.Main.main/1`.
-
-  Example:
-      $ ./provider_vault_cli --help
-      # calls `ProviderVault.MixRunner.main(["--help"])`
-      # which then calls `ProviderVault.CLI.Main.main/1`
+  Called when the compiled `provider_vault_cli` binary runs. It ensures
+  network apps are started and then delegates to `ProviderVault.CLI.Main`.
   """
 
-  def main(argv) do
+  @type argv :: [String.t()]
+
+  @spec main(argv()) :: :ok | no_return()
+  def main(argv \\ []) do
     ensure_started!([:inets, :ssl])
-    ProviderVault.CLI.Main.main(argv)
+
+    case ProviderVault.CLI.Main.main(argv) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        IO.puts(:stderr, "Error: #{inspect(reason)}")
+        System.halt(1)
+    end
   end
 
+  # Start required OTP apps; raise if any fail so the escript exits clearly.
   defp ensure_started!(apps) do
     Enum.each(apps, fn app ->
-      :application.ensure_all_started(app)
+      case :application.ensure_all_started(app) do
+        {:ok, _started} ->
+          :ok
+
+        {:error, reason} ->
+          IO.puts(:stderr, "Failed to start #{app}: #{inspect(reason)}")
+          System.halt(1)
+      end
     end)
   end
 end
