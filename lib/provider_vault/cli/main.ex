@@ -39,7 +39,6 @@ defmodule ProviderVault.CLI.Main do
 
     Usage:
       provider_vault_cli [--help | --version]
-    lsof
     Without flags, an interactive menu will be shown.
     """)
   end
