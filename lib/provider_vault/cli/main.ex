@@ -1,15 +1,5 @@
 defmodule ProviderVault.CLI.Main do
-  @moduledoc """
-  Top-level entry point for the ProviderVault CLI.
-
-  Responsibilities:
-    * Handle top-level CLI args (`--help`, `--version`).
-    * Delegate to the interactive menu (`ProviderVault.CLI.Menu.main/0`).
-    * Provide a `start/0` wrapper for convenience in IEx or Mix tasks.
-  """
-
-  # Silence compile-time warning when Menu hasn't been compiled yet.
-  @compile {:no_warn_undefined, ProviderVault.CLI.Menu}
+  @moduledoc "Top-level CLI launcher."
 
   @type argv :: [String.t()]
 
@@ -25,6 +15,7 @@ defmodule ProviderVault.CLI.Main do
         :ok
 
       true ->
+        # Keep it simple: call the menu directly.
         ProviderVault.CLI.Menu.main()
     end
   end
@@ -44,7 +35,19 @@ defmodule ProviderVault.CLI.Main do
   end
 
   defp print_version do
-    config = Mix.Project.config()
-    IO.puts("#{config[:app]} #{config[:version]}")
+    # Works in escript (no Mix dependency):
+    vsn =
+      case Application.spec(:provider_vault_cli, :vsn) do
+        nil -> "dev"
+        v when is_list(v) -> List.to_string(v)
+        v -> to_string(v)
+      end
+
+    app =
+      case Application.spec(:provider_vault_cli, :applications) do
+        _ -> "provider_vault_cli"
+      end
+
+    IO.puts("#{app} #{vsn}")
   end
 end

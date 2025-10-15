@@ -1,41 +1,64 @@
-# Mix build artifacts
+# ─────────────────────────────
+# ProviderVault CLI .gitignore
+# ─────────────────────────────
+
+# Elixir / Mix build artifacts
 /_build/
 /deps/
-/doc/
-
-# Generated files
-*.beam
+/cover/
 *.ez
+*.beam
+erl_crash.dump
 
-# If you use Dialyzer
-.plt
-.plt.*
+# Mix release / escript binaries
+/provider_vault_cli
 
-# If you use ExUnit with tmp files
-/tmp/
-
-# Logs
-*.log
-
-# Editor/IDE
+# Editor & OS files
+.DS_Store
 .vscode/
 .idea/
 *.swp
 *.swo
-*.DS_Store
+*~
+*.orig
 
-# macOS
-.DS_Store
+# NPPES / data files
+priv/data/*.csv
+priv/data/*.xlsx
+priv/data/*.zip
+priv/data/*.txt
+priv/data/*.json
+priv/data/tmp/
+data/
+scripts/tmp/
 
-# Environment / secrets
+# Logs and temp output
+/log/
+*.log
+/tmp/
+*.tmp
+
+# Env and secrets
 .env
 .env.*
+/config/*.secret.exs
 
-/data/
-/priv/data/
+# Test artifacts
+/test/tmp/
+test-*.csv
+test-*.xlsx
 
-# Generated escript binary
-/provider_vault_cli
+# Coverage & reports
+/cover/
+*.lcov
+*.html
 
+# Dependency lock backup
+mix.lock.backup
 
-*.bak
+# macOS & Linux metadata
+.Trashes
+.AppleDouble
+.fseventsd
+Icon?
+Thumbs.db

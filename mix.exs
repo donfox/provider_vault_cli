@@ -5,7 +5,7 @@ defmodule ProviderVaultCli.MixProject do
   def project do
     [
       app: :provider_vault_cli,
-      version: "1.7.0.",
+      version: "1.7.0",
       elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

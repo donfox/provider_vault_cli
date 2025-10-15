@@ -4,7 +4,6 @@ defmodule ProviderVault.CLI.Menu do
   """
 
   @compile {:no_warn_undefined, ProviderVault.CSV}
-  @compile {:no_warn_undefined, ProviderVault.Excel.Convert}
   @compile {:no_warn_undefined, ProviderVault.Ingestion.NppesFetcher}
 
   @spec main() :: :ok
@@ -26,22 +25,28 @@ defmodule ProviderVault.CLI.Menu do
     4) Edit a provider
     5) Delete a provider
     6) Search by name
-    7) Import sample data
-    8) Clear all records
-    9) Convert Excel -> CSV
-    10) Exit
-    11) Fetch monthly NPPES
+    7) Clear all records
+    8) View statistics
+    9) Fetch latest NPPES provider data (on demand)
+    0) Exit
     """)
   end
 
   defp read_choice do
     case prompt("\nEnter number: ") do
-      :eof -> IO.puts("\nGoodbye."); :ok
-      "10" -> IO.puts("Goodbye!"); :ok
-      choice when choice in ~w(1 2 3 4 5 6 7 8 9 11) ->
+      :eof ->
+        IO.puts("\nGoodbye.")
+        :ok
+
+      "0" ->
+        IO.puts("Goodbye!")
+        :ok
+
+      choice when choice in ~w(1 2 3 4 5 6 7 8 9 0) ->
         dispatch(choice)
+
       _ ->
-        IO.puts("Invalid choice (try 1–11).")
+        IO.puts("Invalid choice (try 1–0).")
         read_choice()
     end
   end
@@ -49,149 +54,196 @@ defmodule ProviderVault.CLI.Menu do
   # --- Dispatch ---
 
   defp dispatch("1") do
-    last  = prompt("Last name: ")
+    last = prompt("Last name: ")
     first = prompt("First name: ")
-    npi   = prompt("NPI (10 digits): ")
+    npi = prompt("NPI (10 digits): ")
+    taxonomy = prompt("Taxonomy (default 207Q00000X): ")
+    phone = prompt("Phone (e.g. 555-0101): ")
+    address = prompt("Address: ")
 
-    safe_call(fn -> ProviderVault.CSV.add_provider(npi, last, first) end,
-      fallback: fn -> IO.puts("Add not implemented yet."); :ok end
+    taxonomy = if taxonomy == "", do: "207Q00000X", else: taxonomy
+    phone = if phone == "", do: "555-0101", else: phone
+    address = if address == "", do: "123 Main St", else: address
+
+    name = "#{last}, #{first}"
+
+    safe_call(
+      fn -> ProviderVault.CSV.add_provider(npi, name, taxonomy, phone, address) end,
+      fallback: fn ->
+        IO.puts("Add provider failed or not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("2") do
-    safe_call(fn -> ProviderVault.CSV.list_providers() end,
-      fallback: fn -> IO.puts("List not implemented yet."); :ok end
+    safe_call(
+      fn -> {:ok, ProviderVault.CSV.list_providers()} end,
+      fallback: fn ->
+        IO.puts("List not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("3") do
     npi = prompt("NPI: ")
-    safe_call(fn -> ProviderVault.CSV.find_by_npi(npi) end,
-      fallback: fn -> IO.puts("Find by NPI not implemented yet."); :ok end
+
+    safe_call(
+      fn -> ProviderVault.CSV.find_by_npi(npi) end,
+      fallback: fn ->
+        IO.puts("Find by NPI not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("4") do
-    npi   = prompt("NPI to edit: ")
-    last  = prompt("New Last (blank to skip): ")
+    npi = prompt("NPI to edit: ")
+    last = prompt("New Last (blank to skip): ")
     first = prompt("New First (blank to skip): ")
-    safe_call(fn -> ProviderVault.CSV.edit_provider(npi, last, first) end,
-      fallback: fn -> IO.puts("Edit not implemented yet."); :ok end
+
+    attrs =
+      %{}
+      |> (fn m ->
+            if last != "" or first != "" do
+              Map.put(m, "name", String.trim("#{last}, #{first}"))
+            else
+              m
+            end
+          end).()
+
+    safe_call(
+      fn -> ProviderVault.CSV.edit_provider(npi, attrs) end,
+      fallback: fn ->
+        IO.puts("Edit not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("5") do
     npi = prompt("NPI to delete: ")
-    safe_call(fn -> ProviderVault.CSV.delete_provider(npi) end,
-      fallback: fn -> IO.puts("Delete not implemented yet."); :ok end
+
+    safe_call(
+      fn -> ProviderVault.CSV.delete_provider(npi) end,
+      fallback: fn ->
+        IO.puts("Delete not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("6") do
     name = prompt("Search name (partial): ")
-    safe_call(fn -> ProviderVault.CSV.search_by_name(name) end,
-      fallback: fn -> IO.puts("Search not implemented yet."); :ok end
+
+    safe_call(
+      fn -> ProviderVault.CSV.search_by_name(name) end,
+      fallback: fn ->
+        IO.puts("Search not implemented yet.")
+        :ok
+      end
     )
+
     loop()
   end
 
   defp dispatch("7") do
-    safe_call(fn -> ProviderVault.CSV.import_sample_data() end,
-      fallback: fn -> IO.puts("Import sample data not implemented yet."); :ok end
-    )
-    loop()
-  end
-
-  defp dispatch("8") do
     confirm = prompt("Type 'YES' to clear all records: ")
+
     if confirm == "YES" do
-      safe_call(fn -> ProviderVault.CSV.clear_all() end,
-        fallback: fn -> IO.puts("Clear all not implemented yet."); :ok end
+      safe_call(
+        fn -> ProviderVault.CSV.clear_all() end,
+        fallback: fn ->
+          IO.puts("Clear all not implemented yet.")
+          :ok
+        end
       )
     else
       IO.puts("Cancelled.")
     end
+
+    loop()
+  end
+
+  defp dispatch("8") do
+    IO.puts("Stats not implemented yet.")
     loop()
   end
 
   defp dispatch("9") do
-    xlsx     = prompt("Path to .xlsx: ")
-    sheet_in = prompt("Sheet (index starting at 1 OR name): ")
-    opts =
-      case Integer.parse(sheet_in) do
-        {idx, ""} when idx > 0 -> [sheet: idx]
-        _ -> [sheet: sheet_in]
-      end
+    url_input = prompt("NPPES monthly ZIP URL (blank to auto-fetch current): ")
+    dest = prompt("Destination dir (default priv/data): ")
+    dest_dir = if dest == "", do: "priv/data", else: dest
 
-    safe_call(fn -> ProviderVault.Excel.Convert.convert_file(xlsx, opts) end,
-      fallback: fn -> IO.puts("Excel -> CSV not implemented yet."); :ok end
-    )
-    loop()
-  end
+    case url_input do
+      "" ->
+        safe_call(
+          fn ->
+            path = ProviderVault.Ingestion.NppesFetcher.fetch_current_month!()
+            IO.puts("Downloaded to: #{path}")
+          end,
+          fallback: fn ->
+            IO.puts("Auto-fetch failed. Please try again.")
+            :ok
+          end
+        )
 
-  defp dispatch("11") do
-    url_input = prompt("NPPES monthly ZIP URL (blank to use env NPPES_URL): ")
-    dest      = prompt("Destination dir (default priv/data): ")
-    dest_dir  = if dest == "", do: "priv/data", else: dest
-    url       = if url_input == "", do: System.get_env("NPPES_URL") || "", else: url_input
-
-    if url == "" do
-      IO.puts("No URL provided and NPPES_URL is not set. Aborting.")
-    else
-      safe_call(
-        fn ->
-          out_path = ProviderVault.Ingestion.NppesFetcher.fetch!(url, to: dest_dir)
-          IO.puts("Downloaded to: #{out_path}")
-          {:ok, out_path}
-        end,
-        fallback: fn -> IO.puts("NPPES fetcher not implemented yet."); :ok end
-      )
+      url ->
+        safe_call(
+          fn ->
+            path = ProviderVault.Ingestion.NppesFetcher.fetch!(url, to: dest_dir)
+            IO.puts("Downloaded to: #{path}")
+          end,
+          fallback: fn ->
+            IO.puts("Fetch failed. Please check the URL and try again.")
+            :ok
+          end
+        )
     end
+
     loop()
   end
 
   defp dispatch(_other) do
     IO.puts("Invalid choice")
-    read_choice()  # re-prompt without redrawing the menu
+    read_choice()
   end
-
-  # --- Helpers ---
 
   defp prompt(label) do
     case IO.gets(label) do
       :eof -> :eof
-      nil  -> :eof
-      bin  -> bin |> to_string() |> String.trim()
+      nil -> :eof
+      bin -> bin |> to_string() |> String.trim()
     end
   end
 
   defp safe_call(fun, opts) do
     fallback = Keyword.get(opts, :fallback, fn -> :ok end)
+
     try do
       case fun.() do
         :ok -> :ok
-        {:ok, []} ->
-          IO.puts("No records.")
-          :ok
-        {:ok, list} when is_list(list) ->
-          render_table(list)
-          :ok
-        {:ok, val} ->
-          IO.inspect(val, label: "OK")
-          :ok
-        other ->
-          IO.inspect(other, label: "Result")
-          :ok
+        {:ok, []} -> IO.puts("No records.")
+        {:ok, list} when is_list(list) -> render_table(list)
+        {:ok, val} -> IO.inspect(val, label: "OK")
+        other -> IO.inspect(other, label: "Result")
       end
     rescue
       e in UndefinedFunctionError ->
         IO.puts("Missing implementation: #{Exception.message(e)}")
         fallback.()
+
       e ->
         IO.puts("Error: #{Exception.message(e)}")
         fallback.()
@@ -203,14 +255,16 @@ defmodule ProviderVault.CLI.Menu do
   end
 
   defp render_table([]), do: :ok
+
   defp render_table(rows) when is_list(rows) do
     cols = ~w(npi name taxonomy phone address)
+
     widths =
       for c <- cols do
         Enum.max([String.length(c) | Enum.map(rows, &String.length(Map.get(&1, c, "")))])
       end
 
-    pad  = fn s, w -> s <> String.duplicate(" ", w - String.length(s)) end
+    pad = fn s, w -> s <> String.duplicate(" ", w - String.length(s)) end
     line = fn ch -> IO.puts(Enum.map(widths, &String.duplicate(ch, &1)) |> Enum.join(" ")) end
 
     header =

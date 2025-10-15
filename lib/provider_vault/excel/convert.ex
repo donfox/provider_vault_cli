@@ -1,7 +1,13 @@
 defmodule ProviderVault.Excel.Convert do
   @moduledoc """
-  Read .xlsx spreadsheets and convert them to CSV files.
-  Uses Xlsxir for parsing and NimbleCSV (ProviderVault.CSV) for CSV output.
+  Excel → CSV conversion using `xlsxir`.
+
+  ### Responsibilities
+  - Extract a worksheet (by index or name) and write a CSV to `priv/data/`.
+  - Surface friendly errors for invalid file type, bad sheet index, etc.
+
+  ### Deprecations
+  Elixir ≥ 1.14: prefer `~c""` for charlists and modern child specs.
   """
 
   alias ProviderVault.CSV
@@ -9,6 +15,8 @@ defmodule ProviderVault.Excel.Convert do
   @type sheet_opt :: pos_integer() | String.t()
   @type opts :: [sheet: sheet_opt, out_dir: String.t()]
 
+  @spec convert_file(String.t(), opts) ::
+          {:ok, String.t()} | {:error, term()}
   @doc """
   Convert a single .xlsx file to CSV.
 
@@ -19,7 +27,7 @@ defmodule ProviderVault.Excel.Convert do
     if !String.ends_with?(String.downcase(xlsx_path), ".xlsx") do
       {:error, {:invalid_file, "expected .xlsx"}}
     else
-      # 1-based default
+      # 1-based by default
       sheet = Keyword.get(opts, :sheet, 1)
       out_dir = Keyword.get(opts, :out_dir, default_data_dir())
 
@@ -37,6 +45,7 @@ defmodule ProviderVault.Excel.Convert do
     end
   end
 
+  @spec convert_all(String.t(), opts) :: [{String.t(), {:ok, String.t()} | {:error, term()}}]
   @doc """
   Convert all `.xlsx` files inside a directory (non-recursive).
   Returns a list of `{path, result}` tuples.
@@ -44,15 +53,21 @@ defmodule ProviderVault.Excel.Convert do
   def convert_all(dir, opts \\ []) when is_binary(dir) do
     sheet = Keyword.get(opts, :sheet, 1)
     out_dir = Keyword.get(opts, :out_dir, default_data_dir())
-    :ok = ensure_out_dir(out_dir)
 
-    dir
-    |> File.ls!()
-    |> Enum.filter(&String.ends_with?(String.downcase(&1), ".xlsx"))
-    |> Enum.map(fn f ->
-      path = Path.join(dir, f)
-      {path, convert_file(path, sheet: sheet, out_dir: out_dir)}
-    end)
+    case ensure_out_dir(out_dir) do
+      :ok ->
+        dir
+        |> File.ls!()
+        |> Enum.filter(&String.ends_with?(String.downcase(&1), ".xlsx"))
+        |> Enum.map(fn f ->
+          path = Path.join(dir, f)
+          {path, convert_file(path, sheet: sheet, out_dir: out_dir)}
+        end)
+
+      {:error, reason} ->
+        # propagate the directory error for each file attempt
+        [{dir, {:error, {:mkdir_failed, reason}}}]
+    end
   end
 
   # --- Internals -------------------------------------------------------------
@@ -103,11 +118,15 @@ defmodule ProviderVault.Excel.Convert do
 
   # Prefer priv/data as the default output bucket
   defp default_data_dir do
-    app = :provider_vault_cli
+    case :code.priv_dir(:provider_vault_cli) do
+      dir when is_list(dir) ->
+        Path.join(List.to_string(dir), "data")
 
-    case :code.priv_dir(app) do
-      dir when is_list(dir) -> Path.join(List.to_string(dir), "data")
-      _ -> Path.join(File.cwd!(), "priv/data")
+      {:error, _} ->
+        Path.join(File.cwd!(), "priv/data")
+
+      other ->
+        other |> to_string() |> then(&Path.join(&1, "data"))
     end
   end
 
