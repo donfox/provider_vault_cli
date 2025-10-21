@@ -1,4 +1,4 @@
-defmodule ProviderVault.Util.Npi do
+defmodule ProviderVault.Npi do
   @moduledoc """
   Utilities for working with National Provider Identifiers (NPI).
 

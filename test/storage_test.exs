@@ -1,16 +1,15 @@
 defmodule ProviderVault.StorageTest do
   use ExUnit.Case
   alias ProviderVault.Storage
-  alias ProviderVault.Providers
-  alias ProviderVault.Util.Npi
+  alias ProviderVault.Npi
 
   @fixture Path.join([__DIR__, "fixtures", "providers_fixture.csv"])
 
   test "loads providers from fixture CSV" do
     providers = Storage.stream_csv(@fixture) |> Enum.to_list()
     assert length(providers) == 10
-    assert %Providers.Provider{name: "Doe, Jane"} = Enum.at(providers, 0)
-    assert %Providers.Provider{name: "Taylor, James"} = List.last(providers)
+    assert %Storage.Provider{name: "Doe, Jane"} = Enum.at(providers, 0)
+    assert %Storage.Provider{name: "Taylor, James"} = List.last(providers)
   end
 
   test "searches providers by partial name" do

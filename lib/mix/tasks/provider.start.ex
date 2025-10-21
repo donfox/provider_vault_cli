@@ -10,6 +10,6 @@ defmodule Mix.Tasks.Provider.Start do
   def run(_argv) do
     Application.ensure_all_started(:inets)
     Application.ensure_all_started(:ssl)
-    ProviderVault.CLI.Main.main([])
+    ProviderVault.CLI.main([])
   end
 end

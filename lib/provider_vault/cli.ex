@@ -1,13 +1,48 @@
-defmodule ProviderVault.CLI.Menu do
+defmodule ProviderVault.CLI do
   @moduledoc """
-  Interactive menu & input handling.
+  Interactive CLI for managing provider records.
+
+  Handles command-line flags (--help, --version) and provides an interactive menu.
   """
 
-  @compile {:no_warn_undefined, ProviderVault.CSV}
-  @compile {:no_warn_undefined, ProviderVault.Ingestion.NppesFetcher}
+  @compile {:no_warn_undefined, ProviderVault.Storage}
+  @compile {:no_warn_undefined, ProviderVault.NppesFetcher}
 
-  @spec main() :: :ok
-  def main, do: loop()
+  @type argv :: [String.t()]
+
+  # =============================================================================
+  # PUBLIC API
+  # =============================================================================
+
+  @doc """
+  Main entry point for the CLI.
+
+  Handles --help, --version flags, or launches the interactive menu.
+  """
+  @spec main(argv()) :: :ok | {:error, term()}
+  def main(argv \\ []) do
+    cond do
+      "--help" in argv or "-h" in argv ->
+        print_help()
+        :ok
+
+      "--version" in argv or "-v" in argv ->
+        print_version()
+        :ok
+
+      true ->
+        # Launch interactive menu
+        loop()
+    end
+  end
+
+  @doc "Convenience wrapper for interactive mode (same as main([]))."
+  @spec start() :: :ok | {:error, term()}
+  def start, do: main([])
+
+  # =============================================================================
+  # INTERACTIVE MENU
+  # =============================================================================
 
   defp loop do
     print_menu()
@@ -51,7 +86,9 @@ defmodule ProviderVault.CLI.Menu do
     end
   end
 
-  # --- Dispatch ---
+  # =============================================================================
+  # MENU DISPATCH
+  # =============================================================================
 
   defp dispatch("1") do
     last = prompt("Last name: ")
@@ -68,7 +105,7 @@ defmodule ProviderVault.CLI.Menu do
     name = "#{last}, #{first}"
 
     safe_call(
-      fn -> ProviderVault.CSV.add_provider(npi, name, taxonomy, phone, address) end,
+      fn -> ProviderVault.Storage.add_provider(npi, name, taxonomy, phone, address) end,
       fallback: fn ->
         IO.puts("Add provider failed or not implemented yet.")
         :ok
@@ -80,7 +117,7 @@ defmodule ProviderVault.CLI.Menu do
 
   defp dispatch("2") do
     safe_call(
-      fn -> {:ok, ProviderVault.CSV.list_providers()} end,
+      fn -> {:ok, ProviderVault.Storage.list_providers()} end,
       fallback: fn ->
         IO.puts("List not implemented yet.")
         :ok
@@ -94,7 +131,7 @@ defmodule ProviderVault.CLI.Menu do
     npi = prompt("NPI: ")
 
     safe_call(
-      fn -> ProviderVault.CSV.find_by_npi(npi) end,
+      fn -> ProviderVault.Storage.find_by_npi(npi) end,
       fallback: fn ->
         IO.puts("Find by NPI not implemented yet.")
         :ok
@@ -120,7 +157,7 @@ defmodule ProviderVault.CLI.Menu do
           end).()
 
     safe_call(
-      fn -> ProviderVault.CSV.edit_provider(npi, attrs) end,
+      fn -> ProviderVault.Storage.edit_provider(npi, attrs) end,
       fallback: fn ->
         IO.puts("Edit not implemented yet.")
         :ok
@@ -134,7 +171,7 @@ defmodule ProviderVault.CLI.Menu do
     npi = prompt("NPI to delete: ")
 
     safe_call(
-      fn -> ProviderVault.CSV.delete_provider(npi) end,
+      fn -> ProviderVault.Storage.delete_provider(npi) end,
       fallback: fn ->
         IO.puts("Delete not implemented yet.")
         :ok
@@ -148,7 +185,7 @@ defmodule ProviderVault.CLI.Menu do
     name = prompt("Search name (partial): ")
 
     safe_call(
-      fn -> ProviderVault.CSV.search_by_name(name) end,
+      fn -> ProviderVault.Storage.search_by_name(name) end,
       fallback: fn ->
         IO.puts("Search not implemented yet.")
         :ok
@@ -163,7 +200,7 @@ defmodule ProviderVault.CLI.Menu do
 
     if confirm == "YES" do
       safe_call(
-        fn -> ProviderVault.CSV.clear_all() end,
+        fn -> ProviderVault.Storage.clear_all() end,
         fallback: fn ->
           IO.puts("Clear all not implemented yet.")
           :ok
@@ -177,7 +214,14 @@ defmodule ProviderVault.CLI.Menu do
   end
 
   defp dispatch("8") do
-    IO.puts("Stats not implemented yet.")
+    safe_call(
+      fn -> ProviderVault.Storage.stats() end,
+      fallback: fn ->
+        IO.puts("Stats not implemented yet.")
+        :ok
+      end
+    )
+
     loop()
   end
 
@@ -190,7 +234,7 @@ defmodule ProviderVault.CLI.Menu do
       "" ->
         safe_call(
           fn ->
-            path = ProviderVault.Ingestion.NppesFetcher.fetch_current_month!()
+            path = ProviderVault.NppesFetcher.fetch_current_month!()
             IO.puts("Downloaded to: #{path}")
           end,
           fallback: fn ->
@@ -202,7 +246,7 @@ defmodule ProviderVault.CLI.Menu do
       url ->
         safe_call(
           fn ->
-            path = ProviderVault.Ingestion.NppesFetcher.fetch!(url, to: dest_dir)
+            path = ProviderVault.NppesFetcher.fetch!(url, to: dest_dir)
             IO.puts("Downloaded to: #{path}")
           end,
           fallback: fn ->
@@ -219,6 +263,10 @@ defmodule ProviderVault.CLI.Menu do
     IO.puts("Invalid choice")
     read_choice()
   end
+
+  # =============================================================================
+  # HELPERS
+  # =============================================================================
 
   defp prompt(label) do
     case IO.gets(label) do
@@ -284,5 +332,35 @@ defmodule ProviderVault.CLI.Menu do
         |> Enum.join(" ")
       )
     end)
+  end
+
+  # =============================================================================
+  # HELP & VERSION
+  # =============================================================================
+
+  defp print_help do
+    IO.puts("""
+    Provider Vault CLI
+
+    Usage:
+      provider_vault_cli [--help | --version]
+    Without flags, an interactive menu will be shown.
+    """)
+  end
+
+  defp print_version do
+    vsn =
+      case Application.spec(:provider_vault_cli, :vsn) do
+        nil -> "dev"
+        v when is_list(v) -> List.to_string(v)
+        v -> to_string(v)
+      end
+
+    app =
+      case Application.spec(:provider_vault_cli, :applications) do
+        _ -> "provider_vault_cli"
+      end
+
+    IO.puts("#{app} #{vsn}")
   end
 end

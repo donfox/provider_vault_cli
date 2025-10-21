@@ -6,7 +6,6 @@ defmodule ProviderVaultCli.MixProject do
     [
       app: :provider_vault_cli,
       version: "1.7.0",
-      elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
 
@@ -18,7 +17,7 @@ defmodule ProviderVaultCli.MixProject do
       # Documentation settings (for `mix docs`, optional)
       docs: [
         # landing page module
-        main: "ProviderVault.CLI.Main",
+        main: "ProviderVault.CLI",
         source_url: "https://github.com/donfox/provider_vault_cli",
         extras: ["README.md"]
       ],
@@ -42,7 +41,6 @@ defmodule ProviderVaultCli.MixProject do
   defp deps do
     [
       {:nimble_csv, "~> 1.3"},
-      {:xlsxir, "~> 1.6"},
       # ex_doc is the tool that generates HTML docs from your @moduledoc/@doc
       # We only want it while developing, not in prod or test.
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}

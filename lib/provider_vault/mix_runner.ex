@@ -12,9 +12,10 @@ defmodule ProviderVault.MixRunner do
   def main(argv \\ []) do
     ensure_started!([:inets, :ssl])
 
-    case ProviderVault.CLI.Main.main(argv) do
+    case ProviderVault.CLI.main(argv) do
       :ok ->
-        :ok
+        # ← Changed
+        System.halt(0)
 
       {:error, reason} ->
         IO.puts(:stderr, "Error: #{inspect(reason)}")

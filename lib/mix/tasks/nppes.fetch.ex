@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Nppes.Fetch do
       end || Mix.raise("Provide URL arg or set NPPES_URL")
 
     path =
-      ProviderVault.Ingestion.NppesFetcher.fetch!(url,
+      ProviderVault.NppesFetcher.fetch!(url,
         to: opts[:to] || "priv/data",
         as: opts[:as]
       )

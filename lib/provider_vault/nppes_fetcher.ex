@@ -1,4 +1,4 @@
-defmodule ProviderVault.Ingestion.NppesFetcher do
+defmodule ProviderVault.NppesFetcher do
   @moduledoc """
   Downloads and extracts NPPES monthly ZIP data.
   """
