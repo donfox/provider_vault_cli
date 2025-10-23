@@ -29,7 +29,7 @@ defmodule ProviderVaultCli.MixProject do
 
   def application do
     [
-      # inets/ssl are handy since you use HTTP in your NPPES fetch
+      mod: {ProviderVaultCli.Application, []},
       extra_applications: [:logger, :inets, :ssl]
     ]
   end
@@ -43,7 +43,10 @@ defmodule ProviderVaultCli.MixProject do
       {:nimble_csv, "~> 1.3"},
       # ex_doc is the tool that generates HTML docs from your @moduledoc/@doc
       # We only want it while developing, not in prod or test.
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      # Database dependencies
+      {:ecto_sql, "~> 3.12"},
+      {:postgrex, "~> 0.19"}
     ]
   end
 
