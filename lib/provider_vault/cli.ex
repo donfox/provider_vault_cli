@@ -1,366 +1,490 @@
+# lib/provider_vault/cli.ex
 defmodule ProviderVault.CLI do
+  alias ProviderVault.Storage
+  alias ProviderVault.DataSources.Orchestrator
+
   @moduledoc """
-  Interactive CLI for managing provider records.
+  Command-line interface for Provider Vault.
 
-  Handles command-line flags (--help, --version) and provides an interactive menu.
+  Available commands:
+    fetch       - Fetch provider data from all sources concurrently
+    refresh     - Clear database and fetch fresh data
+    add         - Add a new provider
+    list        - List all providers
+    search      - Search providers by name, specialty, or city
+    show        - Show detailed provider information
+    update      - Update provider information
+    delete      - Delete a provider
+    import      - Import providers from CSV
+    export      - Export providers to CSV
+    clear       - Clear all providers
+    stats       - Show database statistics
+    help        - Show this help message
   """
 
-  @compile {:no_warn_undefined, ProviderVault.Storage}
-  @compile {:no_warn_undefined, ProviderVault.NppesFetcher}
+  def main(args) do
+    # Ensure the database and table exist
+    Storage.init()
 
-  @type argv :: [String.t()]
+    case args do
+      [] ->
+        show_help()
 
-  # =============================================================================
-  # PUBLIC API
-  # =============================================================================
+      ["help"] ->
+        show_help()
 
-  @doc """
-  Main entry point for the CLI.
+      ["fetch"] ->
+        handle_fetch()
 
-  Handles --help, --version flags, or launches the interactive menu.
-  """
-  @spec main(argv()) :: :ok | {:error, term()}
-  def main(argv \\ []) do
-    cond do
-      "--help" in argv or "-h" in argv ->
-        print_help()
-        :ok
+      ["refresh"] ->
+        handle_refresh()
 
-      "--version" in argv or "-v" in argv ->
-        print_version()
-        :ok
+      ["add" | _] ->
+        handle_add(args)
 
-      true ->
-        # Launch interactive menu
-        loop()
-    end
-  end
+      ["list" | rest] ->
+        handle_list(rest)
 
-  @doc "Convenience wrapper for interactive mode (same as main([]))."
-  @spec start() :: :ok | {:error, term()}
-  def start, do: main([])
+      ["search" | rest] ->
+        handle_search(rest)
 
-  # =============================================================================
-  # INTERACTIVE MENU
-  # =============================================================================
+      ["show", npi] ->
+        handle_show(npi)
 
-  defp loop do
-    print_menu()
-    read_choice()
-  end
+      ["update", npi | _] ->
+        handle_update(npi, args)
 
-  defp print_menu do
-    IO.puts("""
-    == Provider Vault CLI ==
-    Manage simple medical provider records (CSV-backed).
-    Choose an option:
-    1) Add provider
-    2) List providers
-    3) Find by NPI
-    4) Edit a provider
-    5) Delete a provider
-    6) Search by name
-    7) Clear all records
-    8) View statistics
-    9) Fetch latest NPPES provider data (on demand)
-    0) Exit
-    """)
-  end
+      ["delete", npi] ->
+        handle_delete(npi)
 
-  defp read_choice do
-    case prompt("\nEnter number: ") do
-      :eof ->
-        IO.puts("\nGoodbye.")
-        :ok
+      ["import", file_path] ->
+        handle_import(file_path)
 
-      "0" ->
-        IO.puts("Goodbye!")
-        :ok
+      ["export", file_path] ->
+        handle_export(file_path)
 
-      choice when choice in ~w(1 2 3 4 5 6 7 8 9 0) ->
-        dispatch(choice)
+      ["clear"] ->
+        handle_clear()
+
+      ["stats"] ->
+        handle_stats()
 
       _ ->
-        IO.puts("Invalid choice (try 1–0).")
-        read_choice()
+        IO.puts("Unknown command. Type 'help' for available commands.")
+        show_help()
     end
   end
 
-  # =============================================================================
-  # MENU DISPATCH
-  # =============================================================================
+  # ===== HELP =====
 
-  defp dispatch("1") do
-    last = prompt("Last name: ")
-    first = prompt("First name: ")
-    npi = prompt("NPI (10 digits): ")
-    taxonomy = prompt("Taxonomy (default 207Q00000X): ")
-    phone = prompt("Phone (e.g. 555-0101): ")
-    address = prompt("Address: ")
-
-    taxonomy = if taxonomy == "", do: "207Q00000X", else: taxonomy
-    phone = if phone == "", do: "555-0101", else: phone
-    address = if address == "", do: "123 Main St", else: address
-
-    name = "#{last}, #{first}"
-
-    safe_call(
-      fn -> ProviderVault.Storage.add_provider(npi, name, taxonomy, phone, address) end,
-      fallback: fn ->
-        IO.puts("Add provider failed or not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("2") do
-    safe_call(
-      fn -> {:ok, ProviderVault.Storage.list_providers()} end,
-      fallback: fn ->
-        IO.puts("List not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("3") do
-    npi = prompt("NPI: ")
-
-    safe_call(
-      fn -> ProviderVault.Storage.find_by_npi(npi) end,
-      fallback: fn ->
-        IO.puts("Find by NPI not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("4") do
-    npi = prompt("NPI to edit: ")
-    last = prompt("New Last (blank to skip): ")
-    first = prompt("New First (blank to skip): ")
-
-    attrs =
-      %{}
-      |> (fn m ->
-            if last != "" or first != "" do
-              Map.put(m, "name", String.trim("#{last}, #{first}"))
-            else
-              m
-            end
-          end).()
-
-    safe_call(
-      fn -> ProviderVault.Storage.edit_provider(npi, attrs) end,
-      fallback: fn ->
-        IO.puts("Edit not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("5") do
-    npi = prompt("NPI to delete: ")
-
-    safe_call(
-      fn -> ProviderVault.Storage.delete_provider(npi) end,
-      fallback: fn ->
-        IO.puts("Delete not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("6") do
-    name = prompt("Search name (partial): ")
-
-    safe_call(
-      fn -> ProviderVault.Storage.search_by_name(name) end,
-      fallback: fn ->
-        IO.puts("Search not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("7") do
-    confirm = prompt("Type 'YES' to clear all records: ")
-
-    if confirm == "YES" do
-      safe_call(
-        fn -> ProviderVault.Storage.clear_all() end,
-        fallback: fn ->
-          IO.puts("Clear all not implemented yet.")
-          :ok
-        end
-      )
-    else
-      IO.puts("Cancelled.")
-    end
-
-    loop()
-  end
-
-  defp dispatch("8") do
-    safe_call(
-      fn -> ProviderVault.Storage.stats() end,
-      fallback: fn ->
-        IO.puts("Stats not implemented yet.")
-        :ok
-      end
-    )
-
-    loop()
-  end
-
-  defp dispatch("9") do
-    url_input = prompt("NPPES monthly ZIP URL (blank to auto-fetch current): ")
-    dest = prompt("Destination dir (default priv/data): ")
-    dest_dir = if dest == "", do: "priv/data", else: dest
-
-    case url_input do
-      "" ->
-        safe_call(
-          fn ->
-            path = ProviderVault.NppesFetcher.fetch_current_month!()
-            IO.puts("Downloaded to: #{path}")
-          end,
-          fallback: fn ->
-            IO.puts("Auto-fetch failed. Please try again.")
-            :ok
-          end
-        )
-
-      url ->
-        safe_call(
-          fn ->
-            path = ProviderVault.NppesFetcher.fetch!(url, to: dest_dir)
-            IO.puts("Downloaded to: #{path}")
-          end,
-          fallback: fn ->
-            IO.puts("Fetch failed. Please check the URL and try again.")
-            :ok
-          end
-        )
-    end
-
-    loop()
-  end
-
-  defp dispatch(_other) do
-    IO.puts("Invalid choice")
-    read_choice()
-  end
-
-  # =============================================================================
-  # HELPERS
-  # =============================================================================
-
-  defp prompt(label) do
-    case IO.gets(label) do
-      :eof -> :eof
-      nil -> :eof
-      bin -> bin |> to_string() |> String.trim()
-    end
-  end
-
-  defp safe_call(fun, opts) do
-    fallback = Keyword.get(opts, :fallback, fn -> :ok end)
-
-    try do
-      case fun.() do
-        :ok -> :ok
-        {:ok, []} -> IO.puts("No records.")
-        {:ok, list} when is_list(list) -> render_table(list)
-        {:ok, val} -> IO.inspect(val, label: "OK")
-        other -> IO.inspect(other, label: "Result")
-      end
-    rescue
-      e in UndefinedFunctionError ->
-        IO.puts("Missing implementation: #{Exception.message(e)}")
-        fallback.()
-
-      e ->
-        IO.puts("Error: #{Exception.message(e)}")
-        fallback.()
-    catch
-      kind, reason ->
-        IO.puts("Error (#{inspect(kind)}): #{inspect(reason)}")
-        fallback.()
-    end
-  end
-
-  defp render_table([]), do: :ok
-
-  defp render_table(rows) when is_list(rows) do
-    cols = ~w(npi name taxonomy phone address)
-
-    widths =
-      for c <- cols do
-        Enum.max([String.length(c) | Enum.map(rows, &String.length(Map.get(&1, c, "")))])
-      end
-
-    pad = fn s, w -> s <> String.duplicate(" ", w - String.length(s)) end
-    line = fn ch -> IO.puts(Enum.map(widths, &String.duplicate(ch, &1)) |> Enum.join(" ")) end
-
-    header =
-      cols
-      |> Enum.zip(widths)
-      |> Enum.map(fn {c, w} -> pad.(c, w) end)
-      |> Enum.join(" ")
-
-    IO.puts(header)
-    line.("-")
-
-    Enum.each(rows, fn row ->
-      IO.puts(
-        cols
-        |> Enum.zip(widths)
-        |> Enum.map(fn {c, w} -> pad.(Map.get(row, c, ""), w) end)
-        |> Enum.join(" ")
-      )
-    end)
-  end
-
-  # =============================================================================
-  # HELP & VERSION
-  # =============================================================================
-
-  defp print_help do
+  defp show_help do
     IO.puts("""
-    Provider Vault CLI
 
-    Usage:
-      provider_vault_cli [--help | --version]
-    Without flags, an interactive menu will be shown.
+    Provider Vault CLI - Medical Provider Database Management
+
+    USAGE:
+      provider_vault_cli <command> [options]
+
+    DATA FETCHING COMMANDS:
+      fetch                            Fetch provider data from all sources concurrently
+      refresh                          Clear database and fetch fresh data
+
+    PROVIDER MANAGEMENT COMMANDS:
+      add                              Add a new provider interactively
+      list [--limit N]                 List all providers (default: 50)
+      search <query>                   Search by name, specialty, or city
+      show <npi>                       Show detailed provider information
+      update <npi>                     Update provider information
+      delete <npi>                     Delete a provider by NPI
+      import <csv_file>                Import providers from CSV
+      export <csv_file>                Export all providers to CSV
+      clear                            Clear all providers from database
+      stats                            Show database statistics
+      help                             Show this help message
+
+    EXAMPLES:
+      # Fetch data from multiple sources concurrently
+      provider_vault_cli fetch
+
+      # Clear and refresh all data
+      provider_vault_cli refresh
+
+      # List providers
+      provider_vault_cli list --limit 10
+
+      # Search for providers
+      provider_vault_cli search "Smith"
+      provider_vault_cli search "Cardiology"
+
+      # View provider details
+      provider_vault_cli show 1234567890
+
     """)
   end
 
-  defp print_version do
-    vsn =
-      case Application.spec(:provider_vault_cli, :vsn) do
-        nil -> "dev"
-        v when is_list(v) -> List.to_string(v)
-        v -> to_string(v)
-      end
+  # ===== FETCH =====
 
-    app =
-      case Application.spec(:provider_vault_cli, :applications) do
-        _ -> "provider_vault_cli"
-      end
+  defp handle_fetch do
+    IO.puts("\n🚀 Fetching provider data from all sources...\n")
 
-    IO.puts("#{app} #{vsn}")
+    case Orchestrator.fetch_and_store() do
+      {:ok, stats} ->
+        IO.puts("\n✓ Fetch completed successfully!\n")
+
+        summary = Orchestrator.get_summary()
+        print_fetch_summary(summary)
+
+      {:error, reason} ->
+        IO.puts("\n✗ Fetch failed: #{inspect(reason)}\n")
+    end
+  end
+
+  # ===== REFRESH =====
+
+  defp handle_refresh do
+    IO.puts("\n⚠️  This will clear all existing data and fetch fresh data.")
+    confirmation = prompt("Continue? (yes/no)")
+
+    if confirmation in ["yes", "y"] do
+      IO.puts("\n🔄 Refreshing data...\n")
+
+      case Orchestrator.refresh() do
+        {:ok, _stats} ->
+          IO.puts("\n✓ Refresh completed successfully!\n")
+
+        {:error, reason} ->
+          IO.puts("\n✗ Refresh failed: #{inspect(reason)}\n")
+      end
+    else
+      IO.puts("\nRefresh cancelled\n")
+    end
+  end
+
+  defp print_fetch_summary(summary) do
+    IO.puts("""
+    Database Summary:
+    ─────────────────────────────────────
+    Total Providers:      #{summary.total_providers}
+    Unique Specialties:   #{summary.unique_specialties}
+    Unique States:        #{summary.unique_states}
+
+    Top Specialties:
+    """)
+
+    summary.top_specialties
+    |> Enum.take(3)
+    |> Enum.each(fn {specialty, count} ->
+      IO.puts("  • #{specialty}: #{count}")
+    end)
+
+    IO.puts("")
+  end
+
+  # ===== ADD =====
+
+  defp handle_add(_args) do
+    IO.puts("\n=== Add New Provider ===\n")
+
+    attrs = %{
+      npi: prompt("NPI (10 digits)"),
+      first_name: prompt("First Name"),
+      last_name: prompt("Last Name"),
+      credential: prompt("Credential (e.g., MD, DO, NP)"),
+      specialty: prompt("Specialty"),
+      address: prompt("Address"),
+      city: prompt("City"),
+      state: prompt("State (2 letters)"),
+      zip: prompt("ZIP Code"),
+      phone: prompt("Phone")
+    }
+
+    case Storage.insert_provider(attrs) do
+      {:ok, provider} ->
+        IO.puts("\n✓ Provider added successfully!")
+        print_provider(provider)
+
+      {:error, changeset} ->
+        IO.puts("\n✗ Failed to add provider:")
+        print_errors(changeset)
+    end
+  end
+
+  # ===== LIST =====
+
+  defp handle_list(args) do
+    limit = parse_limit(args)
+
+    case Storage.list_providers(limit) do
+      [] ->
+        IO.puts("\nNo providers found in database.")
+        IO.puts("Use 'fetch' to retrieve provider data or 'add' to add manually.\n")
+
+      providers ->
+        IO.puts("\n=== Providers (showing #{length(providers)}) ===\n")
+        print_providers_table(providers)
+    end
+  end
+
+  # ===== SEARCH =====
+
+  defp handle_search([]) do
+    IO.puts("Error: Search query required")
+    IO.puts("Usage: provider_vault_cli search <query>")
+  end
+
+  defp handle_search(query_parts) do
+    query = Enum.join(query_parts, " ")
+
+    IO.puts("\nSearching for: '#{query}'...\n")
+
+    providers = Storage.search_providers(query)
+
+    case providers do
+      [] ->
+        IO.puts("No providers found matching '#{query}'")
+
+      results ->
+        IO.puts("=== Found #{length(results)} provider(s) ===\n")
+        print_providers_table(results)
+    end
+  end
+
+  # ===== SHOW =====
+
+  defp handle_show(npi) do
+    case Storage.get_provider(npi) do
+      nil ->
+        IO.puts("\n✗ Provider with NPI #{npi} not found\n")
+
+      provider ->
+        IO.puts("\n=== Provider Details ===\n")
+        print_provider_detailed(provider)
+    end
+  end
+
+  # ===== UPDATE =====
+
+  defp handle_update(npi, _args) do
+    case Storage.get_provider(npi) do
+      nil ->
+        IO.puts("\n✗ Provider with NPI #{npi} not found\n")
+
+      provider ->
+        IO.puts("\n=== Update Provider (NPI: #{npi}) ===")
+        IO.puts("Press Enter to keep current value\n")
+
+        attrs = %{
+          first_name: prompt_with_default("First Name", provider.first_name),
+          last_name: prompt_with_default("Last Name", provider.last_name),
+          credential: prompt_with_default("Credential", provider.credential),
+          specialty: prompt_with_default("Specialty", provider.specialty),
+          address: prompt_with_default("Address", provider.address),
+          city: prompt_with_default("City", provider.city),
+          state: prompt_with_default("State", provider.state),
+          zip: prompt_with_default("ZIP", provider.zip),
+          phone: prompt_with_default("Phone", provider.phone)
+        }
+
+        # Remove empty values
+        attrs = Enum.reject(attrs, fn {_k, v} -> v == "" end) |> Map.new()
+
+        case Storage.update_provider(provider, attrs) do
+          {:ok, updated} ->
+            IO.puts("\n✓ Provider updated successfully!")
+            print_provider(updated)
+
+          {:error, changeset} ->
+            IO.puts("\n✗ Failed to update provider:")
+            print_errors(changeset)
+        end
+    end
+  end
+
+  # ===== DELETE =====
+
+  defp handle_delete(npi) do
+    case Storage.get_provider(npi) do
+      nil ->
+        IO.puts("\n✗ Provider with NPI #{npi} not found\n")
+
+      provider ->
+        print_provider(provider)
+
+        confirmation = prompt("\nAre you sure you want to delete this provider? (yes/no)")
+
+        if confirmation in ["yes", "y"] do
+          case Storage.delete_provider(provider) do
+            {:ok, _} ->
+              IO.puts("\n✓ Provider deleted successfully\n")
+
+            {:error, reason} ->
+              IO.puts("\n✗ Failed to delete provider: #{inspect(reason)}\n")
+          end
+        else
+          IO.puts("\nDeletion cancelled\n")
+        end
+    end
+  end
+
+  # ===== IMPORT =====
+
+  defp handle_import(file_path) do
+    if File.exists?(file_path) do
+      IO.puts("\nImporting from #{file_path}...\n")
+
+      case Storage.import_from_csv(file_path) do
+        {:ok, count} ->
+          IO.puts("✓ Successfully imported #{count} providers\n")
+
+        {:error, reason} ->
+          IO.puts("✗ Import failed: #{reason}\n")
+      end
+    else
+      IO.puts("\n✗ File not found: #{file_path}\n")
+    end
+  end
+
+  # ===== EXPORT =====
+
+  defp handle_export(file_path) do
+    IO.puts("\nExporting to #{file_path}...\n")
+
+    case Storage.export_to_csv(file_path) do
+      {:ok, count} ->
+        IO.puts("✓ Successfully exported #{count} providers to #{file_path}\n")
+
+      {:error, reason} ->
+        IO.puts("✗ Export failed: #{reason}\n")
+    end
+  end
+
+  # ===== CLEAR =====
+
+  defp handle_clear do
+    confirmation = prompt("\n⚠️  This will delete ALL providers. Are you sure? (yes/no)")
+
+    if confirmation in ["yes", "y"] do
+      case Storage.clear_all() do
+        {:ok, :cleared} ->
+          IO.puts("\n✓ All providers cleared successfully\n")
+
+        {:error, reason} ->
+          IO.puts("\n✗ Failed to clear providers: #{inspect(reason)}\n")
+      end
+    else
+      IO.puts("\nOperation cancelled\n")
+    end
+  end
+
+  # ===== STATS =====
+
+  defp handle_stats do
+    stats = Storage.get_stats()
+
+    IO.puts("""
+
+    === Database Statistics ===
+
+    Total Providers:     #{stats.total_count}
+    Unique Specialties:  #{stats.specialty_count}
+    Unique States:       #{stats.state_count}
+
+    Top 5 Specialties:
+    """)
+
+    Enum.each(stats.top_specialties, fn {specialty, count} ->
+      IO.puts("  #{String.pad_trailing(specialty || "Unknown", 30)} #{count}")
+    end)
+
+    IO.puts("\nTop 5 States:")
+
+    Enum.each(stats.top_states, fn {state, count} ->
+      IO.puts("  #{String.pad_trailing(state || "Unknown", 30)} #{count}")
+    end)
+
+    IO.puts("")
+  end
+
+  # ===== HELPER FUNCTIONS =====
+
+  defp prompt(message) do
+    IO.gets("#{message}: ") |> String.trim()
+  end
+
+  defp prompt_with_default(message, default) do
+    input = IO.gets("#{message} [#{default}]: ") |> String.trim()
+    if input == "", do: default, else: input
+  end
+
+  defp parse_limit(args) do
+    case Enum.find_index(args, &(&1 == "--limit")) do
+      nil ->
+        50
+
+      index ->
+        args
+        |> Enum.at(index + 1, "50")
+        |> String.to_integer()
+    end
+  end
+
+  defp print_provider(provider) do
+    IO.puts("""
+      NPI:        #{provider.npi}
+      Name:       #{provider.first_name} #{provider.last_name}, #{provider.credential}
+      Specialty:  #{provider.specialty}
+      Location:   #{provider.city}, #{provider.state} #{provider.zip}
+      Phone:      #{provider.phone}
+    """)
+  end
+
+  defp print_provider_detailed(provider) do
+    IO.puts("""
+      NPI:           #{provider.npi}
+      Name:          #{provider.first_name} #{provider.last_name}
+      Credential:    #{provider.credential}
+      Specialty:     #{provider.specialty}
+      Address:       #{provider.address}
+      City:          #{provider.city}
+      State:         #{provider.state}
+      ZIP:           #{provider.zip}
+      Phone:         #{provider.phone}
+      Inserted:      #{provider.inserted_at}
+      Last Updated:  #{provider.updated_at}
+    """)
+  end
+
+  defp print_providers_table(providers) do
+    # Header
+    IO.puts(
+      String.pad_trailing("NPI", 12) <>
+        String.pad_trailing("Name", 30) <>
+        String.pad_trailing("Specialty", 25) <>
+        "Location"
+    )
+
+    IO.puts(String.duplicate("-", 90))
+
+    # Rows
+    Enum.each(providers, fn p ->
+      name = "#{p.first_name} #{p.last_name}, #{p.credential}"
+      location = "#{p.city}, #{p.state}"
+
+      IO.puts(
+        String.pad_trailing(p.npi, 12) <>
+          String.pad_trailing(String.slice(name, 0..28), 30) <>
+          String.pad_trailing(String.slice(p.specialty || "N/A", 0..23), 25) <>
+          location
+      )
+    end)
+
+    IO.puts("")
+  end
+
+  defp print_errors(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+    |> Enum.each(fn {field, errors} ->
+      IO.puts("  #{field}: #{Enum.join(errors, ", ")}")
+    end)
   end
 end

@@ -1,53 +1,55 @@
 defmodule ProviderVault.Validators do
-  @moduledoc false
+  @moduledoc """
+  Pure validation functions.
+  All functions return {:ok, value} or {:error, reason}.
+  """
 
   alias ProviderVault.Npi
 
-  @doc """
-  Validate NPI: must be 10 digits and pass the NPI Luhn check.
-  If invalid, prints an error and re-prompts from STDIN.
-  """
-  @spec require_npi(String.t()) :: String.t()
-  def require_npi(npi) when is_binary(npi) do
+  @doc "Validate NPI: must be 10 digits and pass the Luhn check."
+  @spec validate_npi(String.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def validate_npi(npi) when is_binary(npi) do
     n = String.replace(npi, ~r/\D/, "")
 
     cond do
       String.length(n) != 10 ->
-        IO.puts(:stderr, "NPI must be 10 digits")
-        prompt_retry_npi()
+        {:error, "NPI must be 10 digits"}
 
       not Npi.valid?(n) ->
-        IO.puts(:stderr, "Invalid NPI check digit")
-        prompt_retry_npi()
+        {:error, "Invalid NPI check digit"}
 
       true ->
-        n
+        {:ok, n}
     end
   end
 
-  defp prompt_retry_npi do
-    case IO.gets("NPI (10 digits): ") do
-      :eof -> raise ArgumentError, "no input"
-      nil -> raise ArgumentError, "no input"
-      s -> require_npi(String.trim(s))
-    end
-  end
+  @doc "Validate non-empty string."
+  @spec validate_nonempty(String.t()) :: {:ok, String.t()} | {:error, :empty}
+  def validate_nonempty(value) when is_binary(value) do
+    trimmed = String.trim(value)
 
-  @doc """
-  Require a non-empty string; on empty, prints the message and re-prompts.
-  """
-  @spec require_nonempty(String.t(), String.t()) :: String.t()
-  def require_nonempty(value, message) when is_binary(value) and is_binary(message) do
-    if String.trim(value) == "" do
-      IO.puts(:stderr, message)
-
-      case IO.gets("> ") do
-        :eof -> raise ArgumentError, "no input"
-        nil -> raise ArgumentError, "no input"
-        s -> require_nonempty(String.trim(s), message)
-      end
+    if trimmed == "" do
+      {:error, :empty}
     else
-      value
+      {:ok, trimmed}
+    end
+  end
+
+  @doc "Validate phone number format (basic check)."
+  @spec validate_phone(String.t()) :: {:ok, String.t()} | {:error, String.t()}
+  def validate_phone(phone) when is_binary(phone) do
+    # Remove all non-digits
+    digits = String.replace(phone, ~r/\D/, "")
+
+    cond do
+      String.length(digits) < 10 ->
+        {:error, "Phone number must have at least 10 digits"}
+
+      String.length(digits) > 11 ->
+        {:error, "Phone number has too many digits"}
+
+      true ->
+        {:ok, phone}
     end
   end
 end
