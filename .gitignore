@@ -61,4 +61,5 @@ mix.lock.backup
 .AppleDouble
 .fseventsd
 Icon?
-Thumbs.db
+Thumbs.db*.backup
+sample_*.csv
